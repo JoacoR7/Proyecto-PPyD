@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h> // ⬅️ Para medir el tiempo
+#include <time.h> // Para medir el tiempo
 
 // Función para combinar dos subarreglos ordenados
 void merge(int arr[], int left, int mid, int right) {
