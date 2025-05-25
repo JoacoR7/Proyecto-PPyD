@@ -65,11 +65,6 @@ int main(int argc, char *argv[]) {
         srand(time(NULL));
         for (int i = 0; i < n; i++)
             lista[i] = rand() % 10000 + 1;
-
-        //printf("Lista original:\n");
-        //for (int i = 0; i < n; i++)
-        //    printf("%d ", lista[i]);
-        //printf("\n");
     }
 
     clock_t start = clock();
@@ -112,10 +107,6 @@ int main(int argc, char *argv[]) {
     }
 
     if (rank == 0) {
-//        printf("\nLista ordenada:\n");
-  //      for (int i = 0; i < local_n; i++)
-    //        printf("%d ", local_data[i]);
-      //  printf("\n");
         free(local_data);
         free(lista);
     }
