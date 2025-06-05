@@ -5,7 +5,14 @@
 #include <math.h>
 #include <stdbool.h>
 
-// Fusiona dos listas ordenadas
+///////////////////////////////////////////
+// FUNCIONES AUXILIARES
+///////////////////////////////////////////
+
+/**
+ * Fusiona dos arreglos ordenados en uno nuevo también ordenado.
+ * Usado durante la fase de recombinación paralela y en el merge sort.
+ */
 int* mergeArrays(int *a, int a_size, int *b, int b_size) {
     int *result = malloc((a_size + b_size) * sizeof(int));
     int i = 0, j = 0, k = 0;
@@ -17,20 +24,25 @@ int* mergeArrays(int *a, int a_size, int *b, int b_size) {
     while (j < b_size) result[k++] = b[j++];
     return result;
 }
-
+/**
+ * Implementación recursiva del algoritmo MergeSort.
+ * Ordena un subarreglo de arr[] entre los índices left y right.
+ */
 void mergeSort(int arr[], int left, int right) {
     if (left < right) {
         int mid = (left + right) / 2;
         mergeSort(arr, left, mid);
         mergeSort(arr, mid+1, right);
-        // merge ya está implementado, pero no es necesario aquí
+        // Se fusionan las mitades ordenadas usando mergeArrays.
         int *temp = mergeArrays(&arr[left], mid - left + 1, &arr[mid+1], right - mid);
         for (int i = 0; i < right - left + 1; i++) arr[left + i] = temp[i];
         free(temp);
     }
 }
 
-// Función para verificar si un número es primo
+/**
+ * Verifica si un número es primo.
+ */
 bool esPrimo(int num) {
     if (num < 2) return false;
     if (num == 2) return true;
@@ -42,7 +54,9 @@ bool esPrimo(int num) {
     return true;
 }
 
-// Función que cuenta los primos en un arreglo
+/**
+ * Cuenta cuántos elementos del arreglo son números primos.
+ */
 int contarPrimos(int arr[], int n) {
     int contador = 0;
     for (int i = 0; i < n; i++) {
@@ -53,11 +67,13 @@ int contarPrimos(int arr[], int n) {
     return contador;
 }
 
-// ... [los includes y funciones auxiliares no cambian]
-
+///////////////////////////////////////////
+// FUNCIÓN PRINCIPAL
+///////////////////////////////////////////
 int main(int argc, char *argv[]) {
     int rank, size;
-
+    
+    // Inicialización de MPI
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -66,7 +82,7 @@ int main(int argc, char *argv[]) {
     clock_t start_rank0, end_rank0;
 
     if (rank == 0) {
-        start_rank0 = clock();  // Inicio de tareas exclusivas de rank 0
+        start_rank0 = clock();  // Medición de tiempo exclusivo de rank 0
     }
 
     if (argc != 2) {
@@ -82,18 +98,21 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    // Inicialización de estructuras para distribuir datos
     int *lista = NULL;
-    int *counts = malloc(size * sizeof(int));
-    int *displs = malloc(size * sizeof(int));
+    int *counts = malloc(size * sizeof(int)); // Cantidad de elementos por proceso
+    int *displs = malloc(size * sizeof(int)); // Desplazamientos en el arreglo original
 
+    // Cálculo de particiones equitativas
     int base = n / size;
     int resto = n % size;
 
     for (int i = 0; i < size; i++) {
-        counts[i] = base + (i < resto ? 1 : 0);
+        counts[i] = base + (i < resto ? 1 : 0); // Se reparten los "restos" a los primeros procesos
         displs[i] = (i == 0) ? 0 : displs[i - 1] + counts[i - 1];
     }
 
+    // Inicialización del arreglo aleatorio solo en el proceso 0
     if (rank == 0) {
         lista = malloc(n * sizeof(int));
         srand(time(NULL));
@@ -101,40 +120,48 @@ int main(int argc, char *argv[]) {
             lista[i] = rand() % 100000 + 1;
     }
 
-
+    // Tiempo total de ejecución desde aquí
     clock_t start_total = clock();
 
+    // Reserva del arreglo local para cada proceso
     int local_n = counts[rank];
     int *local_data = malloc(local_n * sizeof(int));
 
+    // Distribución de datos a todos los procesos
     MPI_Scatterv(lista, counts, displs, MPI_INT, local_data, local_n, MPI_INT, 0, MPI_COMM_WORLD);
 
-    // Medición de tiempo de cómputo (primos + ordenamiento)
+    // Tiempo de inicio del cómputo local (primos + ordenamiento)
     clock_t start_comp = clock();
 
+    // Conteo de primos y ordenamiento local
     int cantidadPrimos = contarPrimos(local_data, local_n);
     mergeSort(local_data, 0, local_n - 1);
 
+    // Tiempo de fin de cómputo local
     clock_t end_comp = clock();
     double tiempo_local = (double)(end_comp - start_comp) / CLOCKS_PER_SEC;
 
-    // Recolección de tiempos de cómputo
+    // Recolección de los tiempos de cómputo en el proceso 0
     double *tiempos = NULL;
     if (rank == 0) {
         tiempos = malloc(size * sizeof(double));
     }
     MPI_Gather(&tiempo_local, 1, MPI_DOUBLE, tiempos, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    // Fusión paralela
+    /////////////////////////////////////////////////////////
+    // RECOMBINACIÓN PARALELA
+    /////////////////////////////////////////////////////////
     int step = 1;
     while (step < size) {
         if (rank % (2 * step) == 0) {
             if (rank + step < size) {
                 int recv_size;
+                // Recibe tamaño y datos del vecino
                 MPI_Recv(&recv_size, 1, MPI_INT, rank + step, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 int *recv_data = malloc(recv_size * sizeof(int));
                 MPI_Recv(recv_data, recv_size, MPI_INT, rank + step, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
+                // Fusión local con los datos recibidos
                 int *merged = mergeArrays(local_data, local_n, recv_data, recv_size);
                 free(local_data);
                 free(recv_data);
@@ -142,15 +169,17 @@ int main(int argc, char *argv[]) {
                 local_n += recv_size;
             }
         } else {
+            // Envía su bloque al proceso que le corresponde
             int target = rank - step;
             MPI_Send(&local_n, 1, MPI_INT, target, 0, MPI_COMM_WORLD);
             MPI_Send(local_data, local_n, MPI_INT, target, 0, MPI_COMM_WORLD);
             free(local_data);
-            break;
+            break; // Sale del ciclo; ya no participa en siguientes pasos
         }
         step *= 2;
     }
 
+    // Limpieza en proceso 0
     if (rank == 0) {
         free(local_data);
         free(lista);
@@ -159,11 +188,14 @@ int main(int argc, char *argv[]) {
     free(counts);
     free(displs);
 
+    // Fin del tiempo total
     clock_t end_total = clock();
     double time_spent = (double)(end_total - start_total) / CLOCKS_PER_SEC;
 
+    ///////////////////////////////////////////
+    // ANÁLISIS DE BALANCEO DE CARGA (Rank 0)
+    ///////////////////////////////////////////
     if (rank == 0) {
-        // Balanceo de carga
         double min = tiempos[0], max = tiempos[0], sum = tiempos[0];
         for (int i = 1; i < size; i++) {
             if (tiempos[i] < min) min = tiempos[i];
